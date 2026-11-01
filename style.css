@@ -66,3 +66,30 @@ h2{font-size:16px;margin:18px 0 6px}
 
 /* grafik logosunu kesin gizle */
 #tv-attr-logo, a[href*="tradingview.com"]#tv-attr-logo { display: none !important; }
+
+/* v4: tüm Binance Futures — kapsam, arama, ilerleme, sembol seçici */
+input[type=search]{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px;-webkit-appearance:none;appearance:none}
+.toolbar .q{flex:1;min-width:0}
+.prog{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut);margin:0 2px 8px}
+.prog .bar{flex:1;height:4px;background:var(--line);border-radius:4px;overflow:hidden}
+.prog .bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+.prog.done .bar i{background:#3b4a5c}
+.more{display:block;width:100%;margin:4px 0}
+.favmark{color:var(--acc)!important}
+.symbtn{flex:1;min-width:0;max-width:65%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px;font-weight:600;text-align:left;overflow:hidden;white-space:nowrap}
+.symbtn small{font-weight:400;color:var(--mut);font-size:11px}
+.symbtn #symBtnTxt{overflow:hidden;text-overflow:ellipsis}
+.symbtn .caret{color:var(--mut)}
+.picker{position:fixed;left:0;right:0;top:0;bottom:calc(58px + env(safe-area-inset-bottom));z-index:7;background:var(--bg);display:flex;flex-direction:column;padding:calc(8px + env(safe-area-inset-top)) 10px 0;max-width:900px;margin:0 auto}
+.pickhead{display:flex;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.pickhead input{flex:1;min-width:0}
+.picklist{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px}
+.pgrp{position:sticky;top:0;background:var(--bg);color:var(--acc);font-size:12px;font-weight:700;padding:10px 2px 6px;z-index:1}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 2px 0 10px;min-height:44px;border-bottom:1px solid var(--line);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.prow:active{background:var(--panel)}
+.prow.cur{background:#172231}
+.prow .pn{font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.prow .pn small{font-weight:400;color:var(--mut);font-size:11px}
+.prow .star{background:none;border:0;color:var(--mut);font-size:22px;width:44px;height:44px}
+.prow .star.on{color:var(--acc)}
+.pempty{color:var(--mut);font-size:13px;padding:10px 2px}

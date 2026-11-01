@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <header class="top">
@@ -25,18 +25,26 @@
   <!-- ÖZET -->
   <section id="view-ozet" class="view">
     <div class="toolbar">
+      <div class="seg" id="scopeSeg" role="group" aria-label="Kapsam">
+        <button type="button" data-scope="fav">★ Listem</button>
+        <button type="button" data-scope="all">Tümü</button>
+      </div>
+      <button id="refreshAll" class="btn small" type="button">↻ Yenile</button>
+    </div>
+    <div class="toolbar">
+      <input id="sumQ" type="search" class="q" placeholder="Ara (ör. BTC)" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Sembol ara">
       <label class="sel">Sırala
         <select id="sortSel">
-          <option value="list">Liste sırası</option>
           <option value="touch">Temas edenler önce</option>
+          <option value="list">Liste sırası</option>
           <option value="near">Banda en yakın</option>
           <option value="up">Üst banda en yakın</option>
           <option value="lo">Alt banda en yakın</option>
           <option value="az">A → Z</option>
         </select>
       </label>
-      <button id="refreshAll" class="btn small" type="button">↻ Yenile</button>
     </div>
+    <div id="sumProg" class="prog"></div>
     <div class="legendline">4S mum · Gri bantlar (Dynamic HMA+ ± 6×ATR40) · <span class="tag up">▲ Üst</span> <span class="tag lo">▼ Alt</span> = son veya önceki 4S mum banda değdi</div>
     <div id="sumErr" class="banner err hidden"></div>
     <div id="sumList" class="sumlist" role="list"></div>
@@ -46,7 +54,7 @@
   <!-- GRAFİK -->
   <section id="view-grafik" class="view hidden">
     <div class="toolbar">
-      <select id="symSel" aria-label="Sembol"></select>
+      <button id="symBtn" class="symbtn" type="button" aria-haspopup="dialog" aria-label="Sembol seç"><span id="symBtnTxt"></span><span class="caret">▾</span></button>
       <div class="seg" id="tfSeg" role="group" aria-label="Zaman dilimi">
         <button type="button" data-tf="1h">1S</button>
         <button type="button" data-tf="4h">4S</button>
@@ -59,6 +67,13 @@
       <div id="chartMsg" class="chartmsg hidden"></div>
     </div>
     <div class="chartstat" id="chartStat"></div>
+    <div id="picker" class="picker hidden" role="dialog" aria-label="Sembol seç">
+      <div class="pickhead">
+        <input id="symQ" type="search" placeholder="Sembol ara (ör. BTC, PEPE)" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Sembol ara">
+        <button id="pickClose" class="btn small" type="button">Kapat</button>
+      </div>
+      <div id="pickList" class="picklist"></div>
+    </div>
   </section>
 
   <!-- AYARLAR -->
@@ -71,6 +86,7 @@
     </div>
     <label class="check"><input type="checkbox" id="soundChk"> Sesli uyarı</label>
     <label class="check"><input type="checkbox" id="notifChk"> Tarayıcı bildirimi</label>
+    <label class="check"><input type="checkbox" id="alertAllChk"> "Tümü" açıkken Listem dışındaki semboller için de uyar</label>
     <button id="testAlert" class="btn small ghost" type="button">Denemek için uyarı çal</button>
 
     <h2>Semboller</h2>
@@ -81,9 +97,11 @@
     <div id="addMsg" class="muted"></div>
     <ul id="symList" class="symlist"></ul>
     <button id="resetSyms" class="btn small ghost" type="button">Varsayılan listeye dön</button>
+    <p class="muted">Grafik sekmesindeki sembol seçicide ☆ ile de Listem'e ekleyebilirsiniz.</p>
+    <div class="row"><span id="allInfo" class="muted"></span><button id="allRefresh" class="btn small ghost" type="button">↻ Sembol listesini yenile</button></div>
 
     <h2>Hakkında</h2>
-    <p class="muted">Veriler doğrudan tarayıcıdan, herkese açık borsa uç noktalarından çekilir: Binance USDT-M vadeli (fapi), COREUSDT için Bybit. CATUSDT, Binance'teki 1000CATUSDT kontratıdır (fiyat 1000 adet içindir). Hiçbir veri uydurulmaz; bir istek başarısız olursa hata gösterilir. Yatırım tavsiyesi değildir.</p>
+    <p class="muted">Veriler doğrudan tarayıcıdan, herkese açık borsa uç noktalarından çekilir: Binance USDT-M vadeli (fapi), COREUSDT için Bybit. Tüm Binance Futures sembol listesi (işlemdeki sürekli kontratlar) exchangeInfo'dan günde bir alınır, yeni listelenenler kendiliğinden eklenir. Özet'te Listem dışındaki semboller borsa istek sınırına takılmamak için 499 mumla hesaplanır (grafik ve Listem 1500 mum). CATUSDT, Binance'teki 1000CATUSDT kontratıdır (fiyat 1000 adet içindir). Hiçbir veri uydurulmaz; bir istek başarısız olursa hata gösterilir. Yatırım tavsiyesi değildir.</p>
     <p class="muted">Grafik: <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a> Lightweight Charts™ — Copyright (c) 2025 TradingView, Inc. (Apache 2.0)</p>
   </section>
 </main>
@@ -97,8 +115,8 @@
 </nav>
 
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
-<script src="s72.js?v=3"></script>
-<script src="data.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="s72.js?v=4"></script>
+<script src="data.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

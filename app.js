@@ -49,21 +49,36 @@
   if (!Array.isArray(syms) || !syms.length) syms = L72.DEFAULT_SYMBOLS.slice();
   var state = {
     view: LS.get('view', 'ozet'),
-    sort: LS.get('sort', 'list'),
+    sort: LS.get('sort', 'touch'),
+    scope: LS.get('scope', 'all'), // 'fav' = yalnızca Listem, 'all' = tüm Binance Futures
     sym: LS.get('sym', 'BTCUSDT'),
     tf: LS.get('tf', '4h'),
+    q: '', showN: 0,
     lastOk: 0
   };
   if (!L72.TF[state.tf]) state.tf = '4h';
-  function findSym(name) { for (var i = 0; i < syms.length; i++) if (syms[i].name === name) return syms[i]; return null; }
+  if (state.scope !== 'fav') state.scope = 'all';
+
+  // Tüm Binance Futures sembolleri: exchangeInfo'dan, localStorage'da günlük önbellek (l72s.allSyms = {ts, names})
+  var ALL_TTL = 864e5;
+  var allCache = LS.get('allSyms', null);
+  if (!allCache || !Array.isArray(allCache.names)) allCache = { ts: 0, names: [] };
+  var others = [], allErr = null, allLoading = false;
+  function rebuildOthers() { others = L72.otherSymbols(syms, allCache.names); }
+  rebuildOthers();
+
+  function findIn(list, name) { for (var i = 0; i < list.length; i++) if (list[i].name === name) return list[i]; return null; }
+  function isFav(name) { return !!findIn(syms, name); }
+  function findSym(name) { return findIn(syms, name) || findIn(others, name); }
+  function activeSyms() { return state.scope === 'all' ? syms.concat(others) : syms.slice(); }
   if (!findSym(state.sym)) state.sym = syms[0].name;
-  function saveSyms() { LS.set('syms', syms); }
+  function saveSyms() { LS.set('syms', syms); rebuildOthers(); }
   function markOk() { state.lastOk = Date.now(); updHeader(); }
 
   function updHeader() {
     var el = $('updText');
     var errs = 0, tot = 0;
-    syms.forEach(function (s) { var x = sum[s.name]; if (x) { tot++; if (x.err) errs++; } });
+    activeSyms().forEach(function (s) { var x = sum[s.name]; if (x) { tot++; if (x.err) errs++; } });
     if (!state.lastOk) {
       el.textContent = (tot && errs === tot) ? 'Veri alınamadı' : 'Yükleniyor…';
       el.classList.toggle('bad', tot > 0 && errs === tot);
@@ -79,6 +94,8 @@
     state.view = v; LS.set('view', v);
     ['ozet', 'grafik', 'ayar'].forEach(function (k) { $('view-' + k).classList.toggle('hidden', k !== v); });
     document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.view === v); });
+    if (v === 'ozet') renderSummary();
+    if (v !== 'grafik') closePicker();
     if (v === 'grafik') { ensureChart(); if (!cur.o || cur.key !== chartKey()) loadChart(true); else loadChart(false); wsConnect(); }
     else wsClose();
     window.scrollTo(0, 0);
@@ -296,12 +313,77 @@
     }, 1000);
   }
 
-  // ---------- Sembol / zaman dilimi seçimi ----------
+  // ---------- Sembol / zaman dilimi seçimi (aramalı seçici) ----------
+  var PICK_MAX = 250;
+  function symSub(s) { return (s.tk !== s.name ? ' <small>' + esc(s.tk) + '</small>' : '') + (s.ex === 'BY' ? ' <small>Bybit</small>' : ''); }
   function renderSymSel() {
-    $('symSel').innerHTML = syms.map(function (s) {
-      return '<option value="' + esc(s.name) + '"' + (s.name === state.sym ? ' selected' : '') + '>' + esc(s.name) + (s.tk !== s.name ? ' (' + esc(s.tk) + ')' : '') + (s.ex === 'BY' ? ' · Bybit' : '') + '</option>';
-    }).join('');
+    var s = findSym(state.sym);
+    $('symBtnTxt').innerHTML = esc(state.sym) + (s ? symSub(s) : '') + (isFav(state.sym) ? ' <span class="favmark">★</span>' : '');
+    if (!$('picker').classList.contains('hidden')) renderPicker();
   }
+  function normQ(v) { return String(v || '').trim().toUpperCase().replace(/[\s\-_\/]/g, ''); }
+  function matchList(list, q) {
+    if (!q) return list.slice();
+    var a = [], b = [];
+    list.forEach(function (s) {
+      var n = s.name.toUpperCase(), t = s.tk.toUpperCase();
+      if (n.indexOf(q) === 0 || t.indexOf(q) === 0 || t.indexOf('1000' + q) === 0) a.push(s);
+      else if (n.indexOf(q) >= 0 || t.indexOf(q) >= 0) b.push(s);
+    });
+    return a.concat(b);
+  }
+  function pickRow(s) {
+    var x = sum[s.name], st = x && x.s, tag = '';
+    if (st && st.up) tag += '<span class="tag up">▲</span>';
+    if (st && st.lo) tag += '<span class="tag lo">▼</span>';
+    var fav = isFav(s.name);
+    return '<div class="prow' + (s.name === state.sym ? ' cur' : '') + '" data-name="' + esc(s.name) + '"><span class="pn">' + esc(s.name) + symSub(s) + ' ' + tag + '</span>' +
+      '<button type="button" class="star' + (fav ? ' on' : '') + '" data-star="' + esc(s.name) + '" aria-label="' + esc(s.name) + (fav ? ' Listemden çıkar' : ' Listeme ekle') + '">' + (fav ? '★' : '☆') + '</button></div>';
+  }
+  function renderPicker() {
+    var q = normQ($('symQ').value);
+    var f = matchList(syms, q), o = matchList(others, q), html = '';
+    html += '<div class="pgrp">★ Listem (' + f.length + (q ? '/' + syms.length : '') + ')</div>';
+    html += f.length ? f.map(pickRow).join('') : '<div class="pempty">Listemde eşleşen yok</div>';
+    html += '<div class="pgrp">Binance Futures — diğerleri (' + o.length + (q ? '/' + others.length : '') + ')</div>';
+    if (!others.length) html += '<div class="pempty">' + (allLoading ? 'Sembol listesi yükleniyor…' : 'Sembol listesi alınamadı' + (allErr ? ': ' + esc(allErr) : '')) + '</div>';
+    else if (!o.length) html += '<div class="pempty">Eşleşen sembol yok</div>';
+    else {
+      html += o.slice(0, PICK_MAX).map(pickRow).join('');
+      if (o.length > PICK_MAX) html += '<div class="pempty">… ' + (o.length - PICK_MAX) + ' sembol daha. Daraltmak için yazın.</div>';
+    }
+    $('pickList').innerHTML = html;
+  }
+  function openPicker() {
+    $('picker').classList.remove('hidden'); $('symQ').value = ''; renderPicker();
+    $('pickList').scrollTop = 0;
+    setTimeout(function () { try { $('symQ').focus({ preventScroll: true }); } catch (e) { /* */ } }, 50);
+  }
+  function closePicker() { $('picker').classList.add('hidden'); }
+  function toggleFav(name) {
+    var msg = null;
+    if (isFav(name)) {
+      if (syms.length <= 1) msg = 'Listede en az bir sembol kalmalı.';
+      else if (window.confirm(name + ' Listemden çıkarılsın mı?')) syms = syms.filter(function (s) { return s.name !== name; });
+    } else {
+      var s = findSym(name); if (s) syms.push({ name: s.name, tk: s.tk, ex: s.ex });
+    }
+    if (msg) { toast(msg); return; }
+    saveSyms(); delete meta[name];
+    renderSymList(); renderSymSel(); renderPicker(); dirty(); pump();
+  }
+  $('symBtn').addEventListener('click', openPicker);
+  $('pickClose').addEventListener('click', closePicker);
+  $('symQ').addEventListener('input', renderPicker);
+  $('symQ').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { var r = $('pickList').querySelector('.prow'); if (r) { closePicker(); selectChart(r.dataset.name, null); } }
+    if (e.key === 'Escape') closePicker();
+  });
+  $('pickList').addEventListener('click', function (e) {
+    var st = e.target.closest('button[data-star]'); if (st) { toggleFav(st.dataset.star); return; }
+    var row = e.target.closest('.prow'); if (!row) return;
+    closePicker(); selectChart(row.dataset.name, null);
+  });
   function renderTf() { document.querySelectorAll('#tfSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.tf === state.tf); }); }
   function selectChart(name, tf) {
     if (name) { state.sym = name; LS.set('sym', name); }
@@ -309,45 +391,91 @@
     renderSymSel(); renderTf();
     if (state.view === 'grafik') { loadChart(true); wsConnect(); }
   }
-  $('symSel').addEventListener('change', function () { selectChart(this.value, null); });
   document.querySelectorAll('#tfSeg button').forEach(function (b) { b.addEventListener('click', function () { selectChart(null, b.dataset.tf); }); });
 
   // ---------- Özet tablo ----------
+  // Çok sembol (Tümü ≈ 565) için: en fazla CONC paralel istek, Binance ağırlık bütçesi (kayan 60 sn pencere),
+  // 429/418'de bekleme, Listem önce; ekran en fazla ~1,5 sn'de bir ve yalnızca Özet açıkken çizilir.
   var sum = {}; // name -> {s, at, err}
-  var wakeFn = null, fastPass = true, passEnd = 0;
-  function wakeSleep(ms) { return new Promise(function (res) { var t = setTimeout(function () { wakeFn = null; res(); }, ms); wakeFn = function () { clearTimeout(t); wakeFn = null; res(); }; }); }
+  var meta = {}; // name -> {due, busy}
+  var CONC = 5, WEIGHT_BUDGET = 1500, FAV_LIMIT = 1500, ALL_LIMIT = 499;
+  var FAV_EVERY = 60000, ALL_EVERY = 180000;
+  var inflight = 0, wlog = [], pausedUntil = 0, pumpT = null, pumpAt = 0;
+  var PAGE = 120;
+
+  function limitFor(sym) { return isFav(sym.name) ? FAV_LIMIT : ALL_LIMIT; }
+  function usedWeight(now) {
+    while (wlog.length && wlog[0][0] <= now - 60000) wlog.shift();
+    var u = 0; for (var i = 0; i < wlog.length; i++) u += wlog[i][1];
+    return u;
+  }
+  function schedulePump(ms) {
+    ms = Math.max(50, ms | 0);
+    var at = Date.now() + ms;
+    if (pumpT && pumpAt <= at) return;
+    clearTimeout(pumpT); pumpAt = at;
+    pumpT = setTimeout(function () { pumpT = null; pump(); }, ms);
+  }
+  function pickNext(now) {
+    // gizli sekmede yalnızca Listem (uyarılar için) yenilenir
+    var list = document.hidden ? syms : activeSyms(), best = null, bestKey = Infinity, nextDue = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var sym = list[i], m = meta[sym.name] || (meta[sym.name] = { due: 0, busy: false });
+      if (m.busy) continue;
+      if (m.due > now) { if (m.due < nextDue) nextDue = m.due; continue; }
+      var key = (isFav(sym.name) ? 0 : 1e15) + m.due; // Listem önce, sonra en çok geciken
+      if (key < bestKey) { bestKey = key; best = sym; }
+    }
+    return { sym: best, nextDue: nextDue };
+  }
+  function pump() {
+    while (inflight < CONC) {
+      var now = Date.now();
+      if (now < pausedUntil) { schedulePump(pausedUntil - now); return; }
+      var p = pickNext(now);
+      if (!p.sym) { if (isFinite(p.nextDue)) schedulePump(p.nextDue - now); return; }
+      var sym = p.sym, w = sym.ex === 'BN' ? L72.klinesWeight(limitFor(sym)) : 0;
+      if (w && usedWeight(now) + w > WEIGHT_BUDGET) { schedulePump(wlog[0][0] + 60000 - now + 100); return; }
+      if (w) wlog.push([now, w]);
+      run(sym);
+    }
+  }
+  function run(sym) {
+    var m = meta[sym.name] || (meta[sym.name] = { due: 0 });
+    m.busy = true; inflight++;
+    updateOne(sym).then(function () {
+      inflight--; m.busy = false;
+      m.due = Date.now() + (isFav(sym.name) ? FAV_EVERY : ALL_EVERY);
+      dirty(); updHeader(); pump();
+    });
+  }
 
   function updateOne(sym) {
-    return L72.fetchKlines(sym, '4h', 1500).then(function (o) {
+    return L72.fetchKlines(sym, '4h', limitFor(sym)).then(function (o) {
       var r = L72.compute(o), s = L72.summarize(o, r);
       sum[sym.name] = { s: s, at: Date.now(), err: null };
       markOk(); checkAlerts(sym, s);
     }, function (e) {
       var prev = sum[sym.name] || {};
       sum[sym.name] = { s: prev.s || null, at: prev.at || 0, err: L72.errorText(e, sym.ex) };
+      if (sym.ex === 'BN' && e && e.kind === 'http' && (e.status === 429 || e.status === 418)) {
+        pausedUntil = Math.max(pausedUntil, Date.now() + (e.status === 418 ? 180000 : 65000)); // istek sınırı: bekle
+      }
     });
   }
 
-  function summaryLoop() {
-    (function pass() {
-      var list = syms.slice(), i = 0, start = Date.now();
-      function next() {
-        if (i >= list.length) {
-          fastPass = false; passEnd = Date.now(); renderSummary();
-          return wakeSleep(Math.max(1000, 60000 - (Date.now() - start))).then(pass);
-        }
-        var sym = list[i++];
-        if (!findSym(sym.name)) return next();
-        return updateOne(sym).then(function () {
-          renderSummary(); updHeader();
-          var gap = fastPass ? 150 : Math.max(400, Math.floor(45000 / list.length));
-          return wakeSleep(gap);
-        }).then(next);
-      }
-      next();
-    })();
+  var renderT = null, lastRender = 0;
+  function dirty() {
+    if (renderT) return;
+    var wait = Math.max(0, 1500 - (Date.now() - lastRender));
+    renderT = setTimeout(function () { renderT = null; if (state.view === 'ozet' && !document.hidden) renderSummary(); }, wait);
   }
-  $('refreshAll').addEventListener('click', function () { fastPass = true; if (wakeFn) wakeFn(); if (state.view === 'grafik') loadChart(false); });
+  function refreshNow() {
+    var list = activeSyms();
+    list.forEach(function (s) { var m = meta[s.name]; if (m) m.due = 0; });
+    pump();
+  }
+  $('refreshAll').addEventListener('click', function () { refreshNow(); if (state.view === 'grafik') loadChart(false); });
 
   function sortVal(x, mode) {
     var s = x && x.s;
@@ -358,57 +486,94 @@
     if (mode === 'touch') return (s.up || s.lo) ? -1e9 + Math.min(s.distUp, s.distLo) : Math.min(s.distUp, s.distLo);
     return 0;
   }
+  function rowHTML(sym) {
+    var x = sum[sym.name], s = x && x.s, cls = 'srow', tags = '';
+    if (s && s.up) { cls += ' t-up'; tags += '<span class="tag up">▲ Üst ' + (s.upNow ? '(şimdi)' : '(önceki mum)') + '</span>'; }
+    if (s && s.lo) { cls += ' t-lo'; tags += '<span class="tag lo">▼ Alt ' + (s.loNow ? '(şimdi)' : '(önceki mum)') + '</span>'; }
+    var sub = (isFav(sym.name) && state.scope === 'all' ? '<small class="favmark">★</small>' : '') + symSub(sym).replace(/^ /, '');
+    var h = '<div class="' + cls + '" role="listitem" data-name="' + esc(sym.name) + '">';
+    h += '<div class="sname">' + esc(sym.name) + sub + tags + '</div>';
+    h += '<div class="sprice">' + (s ? fmtNum(s.price, s.dp) : (x && x.err ? '—' : '…')) + '</div>';
+    if (s && s.warm) {
+      var bdp = bandDp(s.dp);
+      h += '<div class="sbands"><span>Üst <b>' + fmtNum(s.top, bdp) + '</b> <span class="' + (Math.abs(s.distUp) < 1 ? 'near' : '') + '">' + fmtPct(s.distUp) + '</span></span>' +
+        '<span>Alt <b>' + fmtNum(s.bot, bdp) + '</b> <span class="' + (Math.abs(s.distLo) < 1 ? 'near' : '') + '">' + fmtPct(s.distLo) + '</span></span></div>';
+    } else if (s) {
+      h += '<div class="sbands"><span>Bantlar için yeterli mum yok (' + s.n + ' mum)</span></div>';
+    } else if (!x) {
+      h += '<div class="sbands"><span>Yükleniyor…</span></div>';
+    }
+    if (x && x.err) h += '<div class="serr">⚠ ' + esc(x.err) + (s ? ' · gösterilen veri ' + clock(x.at) : '') + '</div>';
+    return h + '</div>';
+  }
   function renderSummary() {
-    var mode = state.sort, list = syms.slice();
+    lastRender = Date.now();
+    clearTimeout(renderT); renderT = null;
+    var mode = state.sort, all = activeSyms();
+    var list = matchList(all, normQ(state.q));
     if (mode === 'az') list.sort(function (a, b) { return a.name.localeCompare(b.name, 'tr'); });
-    else if (mode !== 'list') list.sort(function (a, b) { return sortVal(sum[a.name], mode) - sortVal(sum[b.name], mode); });
-    var errs = 0, ok = 0, touches = 0;
-    var html = list.map(function (sym) {
-      var x = sum[sym.name], s = x && x.s, cls = 'srow', tags = '';
+    else if (mode !== 'list') {
+      // eşit değerlerde liste sırası korunur (Listem önce)
+      var pos = {}; list.forEach(function (s, k) { pos[s.name] = k; });
+      list.sort(function (a, b) { return (sortVal(sum[a.name], mode) - sortVal(sum[b.name], mode)) || (pos[a.name] - pos[b.name]); });
+    }
+    var errs = 0, ok = 0, touches = 0, done = 0;
+    all.forEach(function (sym) {
+      var x = sum[sym.name], s = x && x.s;
+      if (x) done++;
       if (x && x.err) errs++; else if (s) ok++;
-      if (s && s.up) { cls += ' t-up'; tags += '<span class="tag up">▲ Üst ' + (s.upNow ? '(şimdi)' : '(önceki mum)') + '</span>'; }
-      if (s && s.lo) { cls += ' t-lo'; tags += '<span class="tag lo">▼ Alt ' + (s.loNow ? '(şimdi)' : '(önceki mum)') + '</span>'; }
       if (s && (s.up || s.lo)) touches++;
-      var sub = (sym.tk !== sym.name ? '<small>' + esc(sym.tk) + '</small>' : '') + (sym.ex === 'BY' ? '<small>Bybit</small>' : '');
-      var h = '<div class="' + cls + '" role="listitem" data-name="' + esc(sym.name) + '">';
-      h += '<div class="sname">' + esc(sym.name) + sub + tags + '</div>';
-      h += '<div class="sprice">' + (s ? fmtNum(s.price, s.dp) : (x && x.err ? '—' : '…')) + '</div>';
-      if (s && s.warm) {
-        var bdp = bandDp(s.dp);
-        h += '<div class="sbands"><span>Üst <b>' + fmtNum(s.top, bdp) + '</b> <span class="' + (Math.abs(s.distUp) < 1 ? 'near' : '') + '">' + fmtPct(s.distUp) + '</span></span>' +
-          '<span>Alt <b>' + fmtNum(s.bot, bdp) + '</b> <span class="' + (Math.abs(s.distLo) < 1 ? 'near' : '') + '">' + fmtPct(s.distLo) + '</span></span></div>';
-      } else if (s) {
-        h += '<div class="sbands"><span>Bantlar için yeterli mum yok (' + s.n + ' mum)</span></div>';
-      } else if (!x) {
-        h += '<div class="sbands"><span>Yükleniyor…</span></div>';
-      }
-      if (x && x.err) h += '<div class="serr">⚠ ' + esc(x.err) + (s ? ' · gösterilen veri ' + clock(x.at) : '') + '</div>';
-      return h + '</div>';
-    }).join('');
+    });
+    var n = Math.min(list.length, state.showN || PAGE);
+    var html = list.slice(0, n).map(rowHTML).join('');
+    if (!list.length) html = '<div class="muted pempty">' + (state.q ? 'Aramayla eşleşen sembol yok.' : 'Sembol yok.') + '</div>';
+    if (list.length > n) html += '<button type="button" class="btn small more" id="sumMore">Daha fazla göster (' + n + '/' + list.length + ')</button>';
     $('sumList').innerHTML = html;
-    var tot = list.length;
+    var tot = all.length;
+    // ilerleme
+    var pr = $('sumProg'), busy = done < tot;
+    pr.innerHTML = '<span>' + done + '/' + tot + ' yüklendi' + (Date.now() < pausedUntil ? ' · istek sınırı, bekleniyor…' : '') +
+      (state.scope === 'all' && allLoading && !others.length ? ' · sembol listesi alınıyor…' : '') + '</span>' +
+      '<span class="bar"><i style="width:' + (tot ? Math.round(done / tot * 100) : 0) + '%"></i></span>';
+    pr.classList.toggle('done', !busy);
     $('sumFoot').textContent = 'Güncel: ' + ok + '/' + tot + (errs ? ' · Hata: ' + errs : '') + ' · Temas: ' + touches +
-      (passEnd ? ' · Son tam tur: ' + clock(passEnd) : '') + ' · Her sembol ~60 sn\'de bir yenilenir';
+      (state.scope === 'all' ? ' · Listem ~60 sn, diğerleri ~3 dk\'da bir yenilenir' : ' · Her sembol ~60 sn\'de bir yenilenir');
     var be = $('sumErr');
-    var firstErr = null; list.forEach(function (sym) { var x = sum[sym.name]; if (!firstErr && x && x.err) firstErr = x.err; });
-    if (errs && errs >= Math.max(2, Math.ceil(tot / 2))) { be.classList.remove('hidden'); be.textContent = 'Borsalara ulaşılamıyor: ' + firstErr + '. Gösterilen değerler eski olabilir; hatalı satırlarda veri yoktur.'; }
+    var firstErr = null; all.forEach(function (sym) { var x = sum[sym.name]; if (!firstErr && x && x.err) firstErr = x.err; });
+    if (errs && errs >= Math.max(2, Math.ceil(done / 2))) { be.classList.remove('hidden'); be.textContent = 'Borsalara ulaşılamıyor: ' + firstErr + '. Gösterilen değerler eski olabilir; hatalı satırlarda veri yoktur.'; }
     else be.classList.add('hidden');
   }
   $('sumList').addEventListener('click', function (e) {
+    if (e.target.id === 'sumMore') { state.showN = (state.showN || PAGE) + PAGE; renderSummary(); return; }
     var row = e.target.closest('.srow'); if (!row) return;
     state.sym = row.dataset.name; LS.set('sym', state.sym);
     renderSymSel(); showView('grafik');
   });
+  if (!$('sortSel').querySelector('option[value="' + state.sort + '"]')) state.sort = 'touch';
   $('sortSel').value = state.sort;
-  $('sortSel').addEventListener('change', function () { state.sort = this.value; LS.set('sort', state.sort); renderSummary(); });
+  $('sortSel').addEventListener('change', function () { state.sort = this.value; LS.set('sort', state.sort); state.showN = 0; renderSummary(); });
+  function renderScope() { document.querySelectorAll('#scopeSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.scope === state.scope); }); }
+  document.querySelectorAll('#scopeSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.scope = b.dataset.scope; LS.set('scope', state.scope); state.showN = 0;
+      renderScope(); renderSummary(); updHeader(); pump();
+    });
+  });
+  var qT = null;
+  $('sumQ').addEventListener('input', function () {
+    var v = this.value; clearTimeout(qT);
+    qT = setTimeout(function () { state.q = v; state.showN = 0; renderSummary(); }, 200);
+  });
 
   // ---------- Uyarılar (bildirim / ses) ----------
   var seen = LS.get('seen', {});
   (function prune() { var lim = Date.now() - 4 * 864e5; for (var k in seen) if (seen[k] < lim) delete seen[k]; })();
   var pending = [], flushT = null, audioCtx = null;
-  var cfg = { sound: LS.get('sound', false), notif: LS.get('notif', false) };
+  var cfg = { sound: LS.get('sound', false), notif: LS.get('notif', false), alertAll: LS.get('alertAll', false) };
 
   function checkAlerts(sym, s) {
+    // Listem her zaman; diğer semboller yalnızca "Tümü" açıkken ve ayar açıksa uyarı verir
+    if (!isFav(sym.name) && !(cfg.alertAll && state.scope === 'all')) return;
     var found = [];
     if (s.upNow) found.push([sym.name + '|U|' + s.t, 'üst', 'şimdiki']);
     else if (s.upPrev) found.push([sym.name + '|U|' + s.tPrev, 'üst', 'önceki']);
@@ -424,10 +589,11 @@
   }
   function flushAlerts() {
     if (!pending.length) return;
-    var lines = pending.splice(0);
-    toast('🔔 ' + lines.join(' · '));
+    var lines = pending.splice(0), MAXL = 6;
+    var shown = lines.length > MAXL ? lines.slice(0, MAXL).concat(['… ve ' + (lines.length - MAXL) + ' temas daha (Özet\'te "Temas edenler önce")']) : lines;
+    toast('🔔 ' + shown.join(' · '));
     if (cfg.sound) beep();
-    if (cfg.notif) notify('72S bant teması', lines.join('\n'));
+    if (cfg.notif) notify('72S bant teması' + (lines.length > 1 ? ' (' + lines.length + ')' : ''), shown.join('\n'));
   }
   function toast(text) {
     var t = $('toast'); t.textContent = text; t.classList.remove('hidden');
@@ -474,6 +640,7 @@
       $('notifChk').disabled = p !== 'granted';
     }
     $('soundChk').checked = !!cfg.sound;
+    $('alertAllChk').checked = !!cfg.alertAll;
     $('notifChk').checked = !!cfg.notif && !$('notifChk').disabled;
   }
   $('notifBtn').addEventListener('click', function () {
@@ -485,6 +652,7 @@
   });
   $('soundChk').addEventListener('change', function () { cfg.sound = this.checked; LS.set('sound', cfg.sound); if (cfg.sound) unlockAudio(); });
   $('notifChk').addEventListener('change', function () { cfg.notif = this.checked; LS.set('notif', cfg.notif); });
+  $('alertAllChk').addEventListener('change', function () { cfg.alertAll = this.checked; LS.set('alertAll', cfg.alertAll); });
   $('testAlert').addEventListener('click', function () {
     unlockAudio(); toast('🔔 Deneme uyarısı (gerçek bir temas değildir)');
     if (cfg.sound) beep();
@@ -503,41 +671,75 @@
     var n = b.dataset.del;
     if (syms.length <= 1) { $('addMsg').textContent = 'Listede en az bir sembol kalmalı.'; return; }
     if (!window.confirm(n + ' listeden çıkarılsın mı?')) return;
-    syms = syms.filter(function (s) { return s.name !== n; }); saveSyms(); delete sum[n];
-    if (state.sym === n) { state.sym = syms[0].name; LS.set('sym', state.sym); }
-    renderSymList(); renderSymSel(); renderSummary();
+    syms = syms.filter(function (s) { return s.name !== n; }); saveSyms(); delete meta[n];
+    if (!findSym(state.sym)) { state.sym = syms[0].name; LS.set('sym', state.sym); }
+    renderSymList(); renderSymSel(); renderSummary(); pump();
   });
   $('addForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var v = $('addInp').value.trim(); if (!v) return;
     var msg = $('addMsg'); msg.textContent = 'Aranıyor…';
-    L72.resolveSymbol(v).then(function (s) {
-      if (findSym(s.name)) { msg.textContent = s.name + ' zaten listede.'; return; }
-      syms.push(s); saveSyms(); $('addInp').value = '';
+    var n = v.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (n && !/USD[TC]$/.test(n)) n += 'USDT';
+    if (n && isFav(n)) { msg.textContent = n + ' zaten listede.'; return; }
+    // önce Binance Futures listesinde ara (ağ isteği gerekmez); yoksa borsalarda dene
+    var known = findIn(others, n), k1000 = !known && !/^1000/.test(n) ? findIn(others, '1000' + n) : null;
+    var found = known ? Promise.resolve({ name: n, tk: known.tk, ex: 'BN' }) :
+      k1000 ? Promise.resolve({ name: n, tk: k1000.tk, ex: 'BN' }) : L72.resolveSymbol(v);
+    found.then(function (s) {
+      if (isFav(s.name)) { msg.textContent = s.name + ' zaten listede.'; return; }
+      syms.push(s); saveSyms(); $('addInp').value = ''; delete meta[s.name];
       msg.textContent = s.name + ' eklendi (' + L72.EX_NAME[s.ex] + (s.tk !== s.name ? ', ' + s.tk : '') + ').';
-      renderSymList(); renderSymSel(); renderSummary();
-      updateOne(s).then(renderSummary);
+      renderSymList(); renderSymSel(); renderSummary(); pump();
     }, function (err) {
       msg.textContent = err && err.kind === 'symbol' ? 'Bulunamadı: Binance USDT-M ve Bybit vadelide bu sembol yok.' : 'Eklenemedi: ' + L72.errorText(err, 'BN');
     });
   });
   $('resetSyms').addEventListener('click', function () {
     if (!window.confirm('Sembol listesi varsayılana dönsün mü? Eklediğiniz semboller silinir.')) return;
-    syms = L72.DEFAULT_SYMBOLS.slice(); saveSyms(); sum = {};
+    syms = L72.DEFAULT_SYMBOLS.slice(); saveSyms(); meta = {};
     if (!findSym(state.sym)) state.sym = syms[0].name;
-    renderSymList(); renderSymSel(); renderSummary(); fastPass = true; if (wakeFn) wakeFn();
+    renderSymList(); renderSymSel(); renderSummary(); pump();
   });
+
+  // ---------- Tüm sembol listesi (exchangeInfo) ----------
+  function renderAllInfo() {
+    var el = $('allInfo'); if (!el) return;
+    el.textContent = allCache.names.length
+      ? 'Binance Futures (USDT-M, sürekli kontrat): ' + allCache.names.length + ' sembol · liste ' + dtF.format(new Date(allCache.ts)) + ' tarihli' + (allErr ? ' · son yenileme başarısız: ' + allErr : '')
+      : (allLoading ? 'Binance Futures sembol listesi alınıyor…' : 'Binance Futures sembol listesi alınamadı' + (allErr ? ': ' + allErr : '') + '. Yalnızca Listem gösteriliyor.');
+  }
+  function loadAll(force) {
+    if (allLoading) return;
+    if (!force && allCache.names.length && Date.now() - allCache.ts < ALL_TTL) return;
+    allLoading = true; renderAllInfo();
+    L72.fetchAllSymbols().then(function (names) {
+      allCache = { ts: Date.now(), names: names }; allErr = null;
+      LS.set('allSyms', allCache);
+    }, function (e) {
+      allErr = L72.errorText(e, 'BN'); // önbellekteki (ya da yalnızca varsayılan) liste kullanılmaya devam eder
+    }).then(function () {
+      allLoading = false; rebuildOthers();
+      if (!findSym(state.sym)) state.sym = syms[0].name;
+      var saved = LS.get('sym', null); if (saved && saved !== state.sym && findSym(saved) && !cur.o) state.sym = saved;
+      renderAllInfo(); renderSymSel(); dirty(); updHeader(); pump();
+    });
+  }
+  $('allRefresh').addEventListener('click', function () { loadAll(true); });
 
   // ---------- Başlat ----------
   setInterval(function () { if (state.view === 'grafik' && !document.hidden) { loadChart(false); wsConnect(); } }, 20000);
   setInterval(updHeader, 15000);
+  setInterval(function () { loadAll(false); }, 3600e3); // günlük yenileme (saatte bir kontrol)
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) return;
     if (state.view === 'grafik') { loadChart(false); wsConnect(); }
-    if (passEnd && Date.now() - passEnd > 60000) { fastPass = true; if (wakeFn) wakeFn(); }
+    if (state.view === 'ozet') renderSummary();
+    loadAll(false); pump();
   });
-  renderSymSel(); renderTf(); renderSymList(); renderNotif(); renderSummary();
+  renderSymSel(); renderTf(); renderScope(); renderSymList(); renderNotif(); renderAllInfo(); renderSummary();
   showView(state.view);
-  summaryLoop();
-  window.__l72 = { state: state, sum: sum, cur: cur, get syms() { return syms; } }; // test/tanılama için
+  loadAll(false);
+  pump();
+  window.__l72 = { state: state, sum: sum, cur: cur, meta: meta, get syms() { return syms; }, get others() { return others; }, usedWeight: function () { return usedWeight(Date.now()); } }; // test/tanılama için
 })();

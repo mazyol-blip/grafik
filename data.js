@@ -163,10 +163,62 @@
     return next(0);
   }
 
+  // ---------- Tüm Binance Futures sembolleri (exchangeInfo) ----------
+  var EXINFO_URL = 'https://fapi.binance.com/fapi/v1/exchangeInfo';
+
+  // Binance klines istek ağırlığı (limit'e göre): <100 → 1, <500 → 2, ≤1000 → 5, üstü → 10
+  function klinesWeight(limit) {
+    limit = limit || 500;
+    if (limit < 100) return 1;
+    if (limit < 500) return 2;
+    if (limit <= 1000) return 5;
+    return 10;
+  }
+
+  // exchangeInfo yanıtından işlemde olan sürekli (PERPETUAL) kontratlar. Vadeli/çeyreklik ve TradFi kontratları alınmaz.
+  // Sıra: önce USDT, sonra USDC, sonra diğer teminatlar; her grup kendi içinde alfabetik.
+  function parseExchangeInfo(j) {
+    if (!j || !Array.isArray(j.symbols)) throw FetchError('parse');
+    var qOrder = { USDT: 0, USDC: 1 }, seen = {}, out = [];
+    j.symbols.forEach(function (x) {
+      if (!x || x.status !== 'TRADING' || x.contractType !== 'PERPETUAL') return;
+      var n = typeof x.symbol === 'string' ? x.symbol.trim() : '';
+      if (!n || seen[n]) return;
+      seen[n] = 1;
+      out.push({ n: n, q: qOrder[x.quoteAsset] !== undefined ? qOrder[x.quoteAsset] : 2 });
+    });
+    out.sort(function (a, b) { return a.q - b.q || (a.n < b.n ? -1 : a.n > b.n ? 1 : 0); });
+    return out.map(function (x) { return x.n; });
+  }
+
+  function fetchAllSymbols() {
+    return getJSON(EXINFO_URL, 25000).then(function (j) {
+      var names = parseExchangeInfo(j);
+      if (!names.length) throw FetchError('empty');
+      return names;
+    });
+  }
+
+  // Favoriler (kullanıcının listesi) dışındaki tüm semboller. Favorideki bir kontratla aynı ad ya da aynı Binance
+  // sembolü (ör. CATUSDT → 1000CATUSDT) tekrar eklenmez.
+  function otherSymbols(favs, names) {
+    var used = {};
+    (favs || []).forEach(function (s) { used[s.name] = 1; if (s.ex === 'BN') used[s.tk] = 1; });
+    var out = [];
+    (names || []).forEach(function (n) {
+      if (used[n]) return;
+      used[n] = 1;
+      out.push({ name: n, tk: n, ex: 'BN' });
+    });
+    return out;
+  }
+
   var api = {
     TF: TF, DEFAULT_SYMBOLS: DEFAULT_SYMBOLS, EX_NAME: EX_NAME,
     getJSON: getJSON, klinesURL: klinesURL, fetchKlines: fetchKlines, toOHLC: toOHLC,
-    compute: compute, summarize: summarize, resolveSymbol: resolveSymbol, errorText: errorText
+    compute: compute, summarize: summarize, resolveSymbol: resolveSymbol, errorText: errorText,
+    EXINFO_URL: EXINFO_URL, klinesWeight: klinesWeight, parseExchangeInfo: parseExchangeInfo,
+    fetchAllSymbols: fetchAllSymbols, otherSymbols: otherSymbols
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.L72 = api;
