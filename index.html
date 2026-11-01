@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="72S Canlı">
+<title>72S Canlı Grafik</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">72S <span>Canlı</span></div>
+  <div class="upd" id="updText">Yükleniyor…</div>
+</header>
+
+<main>
+  <!-- ÖZET -->
+  <section id="view-ozet" class="view">
+    <div class="toolbar">
+      <label class="sel">Sırala
+        <select id="sortSel">
+          <option value="list">Liste sırası</option>
+          <option value="touch">Temas edenler önce</option>
+          <option value="near">Banda en yakın</option>
+          <option value="up">Üst banda en yakın</option>
+          <option value="lo">Alt banda en yakın</option>
+          <option value="az">A → Z</option>
+        </select>
+      </label>
+      <button id="refreshAll" class="btn small" type="button">↻ Yenile</button>
+    </div>
+    <div class="legendline">4S mum · Gri bantlar (Dynamic HMA+ ± 6×ATR40) · <span class="tag up">▲ Üst</span> <span class="tag lo">▼ Alt</span> = son veya önceki 4S mum banda değdi</div>
+    <div id="sumErr" class="banner err hidden"></div>
+    <div id="sumList" class="sumlist" role="list"></div>
+    <div class="sumfoot" id="sumFoot"></div>
+  </section>
+
+  <!-- GRAFİK -->
+  <section id="view-grafik" class="view hidden">
+    <div class="toolbar">
+      <select id="symSel" aria-label="Sembol"></select>
+      <div class="seg" id="tfSeg" role="group" aria-label="Zaman dilimi">
+        <button type="button" data-tf="1h">1S</button>
+        <button type="button" data-tf="4h">4S</button>
+        <button type="button" data-tf="1d">1G</button>
+      </div>
+    </div>
+    <div class="chartwrap">
+      <div id="chart"></div>
+      <div id="legend" class="legend"></div>
+      <div id="chartMsg" class="chartmsg hidden"></div>
+    </div>
+    <div class="chartstat" id="chartStat"></div>
+  </section>
+
+  <!-- AYARLAR -->
+  <section id="view-ayar" class="view hidden">
+    <h2>Bildirim</h2>
+    <p class="muted">Sayfa açıkken bir sembol gri banda değdiğinde bildirim ve/veya ses. Telefonda arka planda tarayıcı sayfayı uyutabilir; en sağlıklısı sayfayı açık tutmak.</p>
+    <div class="row">
+      <button id="notifBtn" class="btn" type="button">🔔 Bildirimlere izin ver</button>
+      <span id="notifState" class="muted"></span>
+    </div>
+    <label class="check"><input type="checkbox" id="soundChk"> Sesli uyarı</label>
+    <label class="check"><input type="checkbox" id="notifChk"> Tarayıcı bildirimi</label>
+    <button id="testAlert" class="btn small ghost" type="button">Denemek için uyarı çal</button>
+
+    <h2>Semboller</h2>
+    <form id="addForm" class="row">
+      <input id="addInp" type="text" inputmode="latin" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ör. WIF veya WIFUSDT">
+      <button class="btn" type="submit">Ekle</button>
+    </form>
+    <div id="addMsg" class="muted"></div>
+    <ul id="symList" class="symlist"></ul>
+    <button id="resetSyms" class="btn small ghost" type="button">Varsayılan listeye dön</button>
+
+    <h2>Hakkında</h2>
+    <p class="muted">Veriler doğrudan tarayıcıdan, herkese açık borsa uç noktalarından çekilir: Binance USDT-M vadeli (fapi), COREUSDT için Bybit. CATUSDT, Binance'teki 1000CATUSDT kontratıdır (fiyat 1000 adet içindir). Hiçbir veri uydurulmaz; bir istek başarısız olursa hata gösterilir. Yatırım tavsiyesi değildir.</p>
+    <p class="muted">Grafik: <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a> Lightweight Charts™ — Copyright (c) 2025 TradingView, Inc. (Apache 2.0)</p>
+  </section>
+</main>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<nav class="tabs" role="tablist">
+  <button type="button" data-view="ozet">📋<span>Özet</span></button>
+  <button type="button" data-view="grafik">📈<span>Grafik</span></button>
+  <button type="button" data-view="ayar">⚙️<span>Ayarlar</span></button>
+</nav>
+
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+<script src="s72.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
