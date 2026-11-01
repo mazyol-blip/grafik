@@ -94,7 +94,7 @@
     if (chart) return;
     chart = LC.createChart($('chart'), {
       autoSize: true,
-      layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#aab4c0', fontSize: 11, attributionLogo: true },
+      layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#aab4c0', fontSize: 11, attributionLogo: false },
       grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
       rightPriceScale: { borderColor: '#1f2a37', scaleMargins: { top: 0.12, bottom: 0.08 } },
       timeScale: {
