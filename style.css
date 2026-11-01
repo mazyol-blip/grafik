@@ -63,3 +63,6 @@ h2{font-size:16px;margin:18px 0 6px}
 .tabs button.on{color:var(--acc)}
 .toast{position:fixed;left:12px;right:12px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:8;background:#1d2a3a;border:1px solid var(--acc);border-radius:12px;padding:11px 13px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.5)}
 @media (min-width:700px){.srow{grid-template-columns:180px 1fr auto}.sbands{grid-column:auto;justify-content:flex-start;gap:22px;align-items:center}.sprice{order:3}.serr{grid-column:2/-1}}
+
+/* grafik logosunu kesin gizle */
+#tv-attr-logo, a[href*="tradingview.com"]#tv-attr-logo { display: none !important; }
